@@ -32,6 +32,8 @@
     <canvas id="game" width="800" height="500"></canvas>
   </main>
 
+  <script src="inventory.js"></script>
+
   <script>
     const canvas = document.getElementById("game");
     const ctx = canvas.getContext("2d");
@@ -56,8 +58,10 @@
       const quartoImg = await loadImage("CenarioQuarto.jpeg");
       const jardimImg = await loadImage("CenarioJardim.jpeg");
       const subjectImg = await loadImage("Subject029.tt.png");
-      const subjectSound = new Audio("efeitosonoroGM.m4a");
-      subjectSound.volume = 0.6; // pode ajustar (0 a 1)
+      const subjectSound = new Audio("efeito-sonoro-_2_.mp3");
+      subjectSound.volume = 1;
+      const inventory = new Inventory();
+      const paperIcon = await loadImage("Paper2.png");
 
       // =========================
       // ESTADO
@@ -69,7 +73,10 @@
       let interactHint = null; // "porta" ou "papel"
       let subjectActive = false;
       let subjectShown = false;
-     let subjectTimer = 0;
+      let subjectTimer = 0;
+      let paperCollected = false;
+      let showHint = false;
+      let hintStartTime = 0;
 
       const dialogues = [
         "O que eu fiz...",
@@ -90,6 +97,24 @@
       // =========================
       // INPUT
       // =========================
+
+      window.addEventListener("keydown", (e) => {
+
+  keys[e.key.toLowerCase()] = true;
+
+  if (e.key.toLowerCase() === "f") {
+    inventory.toggle();
+  }
+
+  if (e.key === "Enter" && showDialogue) {
+    dialogueIndex++;
+    if (dialogueIndex >= dialogues.length) {
+      showDialogue = false;
+    }
+  }
+});
+
+
       window.addEventListener("keydown", (e) => {
         keys[e.key.toLowerCase()] = true;
 
@@ -106,7 +131,17 @@
       });
 
       canvas.addEventListener("click", (e) => {
+        
 
+  const rect = canvas.getBoundingClientRect();
+  const x = e.clientX - rect.left;
+  const y = e.clientY - rect.top;
+
+  // 👇 INVENTÁRIO PRIMEIRO
+  if (inventory.open) {
+    inventory.handleClick(x, y);
+    return;
+  }
   // avançar diálogo com clique
   if (showDialogue) {
     dialogueIndex++;
@@ -150,11 +185,25 @@
   }
 }
 
+  let lastTransitionTime = 0;
+  const TRANSITION_DELAY = 400;
+
+function changeScene(newScene, newX) {
+  const now = Date.now();
+
+  if (now - lastTransitionTime < TRANSITION_DELAY) return;
+
+  scene = newScene;
+  player.x = newX;
+
+  lastTransitionTime = now;
+}
+
       function update() {
 
   interactHint = null;
 
-  if (!showDialogue && !showPaper) {
+  if (!showDialogue && !showPaper && !inventory.open) {
 
     // movimento
     if (keys["w"]) player.y -= player.speed;
@@ -167,25 +216,69 @@
     player.y = Math.max(0, Math.min(452, player.y));
 
     // ================= PORTAS =================
-    const nearDoor =
-      player.x > 720 &&
-      player.y > 160 &&
-      player.y < 320;
+    if (scene === "quarto") {
 
-    if (nearDoor) {
-      interactHint = "porta";
+  // porta direita (vai pra sala)
+  const doorForward =
+    player.x > 740 &&
+    player.y > 170 &&
+    player.y < 310;
 
-      if (keys["e"]) {
-        if (scene === "quarto") {
-          scene = "sala";
-          player.x = 20;
-        } else if (scene === "sala") {
-          scene = "quintal";
-          player.x = 20;
-        }
-      }
+  if (doorForward) {
+    interactHint = "porta";
+
+    if (keys["e"]) {
+      changeScene("sala", 80);
     }
+  }
+}
 
+if (scene === "sala") {
+
+  const doorBack =
+    player.x < 60 &&
+    player.y > 170 &&
+    player.y < 310;
+
+  const doorForward =
+    player.x > 740 &&
+    player.y > 170 &&
+    player.y < 310;
+
+  // VOLTAR
+  if (doorBack) {
+    interactHint = "porta";
+
+    if (keys["e"]) {
+      changeScene("quarto", 680);
+    }
+  }
+
+  // IR
+  else if (doorForward) {
+    interactHint = "porta";
+
+    if (keys["e"]) {
+      changeScene("quintal", 80);
+    }
+  }
+}
+
+if (scene === "quintal") {
+
+  const doorBack =
+    player.x < 60 &&
+    player.y > 170 &&
+    player.y < 310;
+
+  if (doorBack) {
+    interactHint = "porta";
+
+    if (keys["e"]) {
+      changeScene("sala", 680);
+    }
+  }
+}
     // ================= PAPEL =================
     if (scene === "quintal") {
 
@@ -195,11 +288,24 @@
         player.y < 340 &&
         player.y + player.h > 300;
 
-      if (nearPaper) {
+      if (nearPaper && !paperCollected) {
         interactHint = "papel";
 
-        if (nearPaper && keys["e"]) {
+        if (keys["e"]) {
   showPaper = true;
+
+  paperCollected = true;
+  showHint = true;
+  hintStartTime = Date.now();
+
+  // adiciona ao inventário (uma vez só)
+  if (!inventory.items.find(i => i.name === "Desenho")) {
+    inventory.addItem({
+  name: "Desenho",
+  desc: "Algo parece errado...",
+  icon: paperIcon
+});
+  }
 
   // ativa o evento SOMENTE NA PRIMEIRA VEZ
   if (!subjectShown) {
@@ -234,17 +340,27 @@
   else if (scene === "sala") {
     ctx.drawImage(salaImg, 0, 0, 800, 500);
 
-    ctx.fillStyle = "rgba(0,0,0,0.3)";
-    ctx.fillRect(740, 170, 40, 140);
+    // porta esquerda
+ctx.fillStyle = "rgba(0,0,0,0.3)";
+ctx.fillRect(0, 170, 40, 140);
+
+// porta direita
+ctx.fillRect(740, 170, 40, 140);
   }
 
   // JARDIM
   else if (scene === "quintal") {
     ctx.drawImage(jardimImg, 0, 0, 800, 500);
 
-    // papel ainda desenhado por cima
+    // porta esquerda (voltar)
+ctx.fillStyle = "rgba(0,0,0,0.3)";
+ctx.fillRect(0, 170, 40, 140);
+
+    // 👇 SÓ DESENHA SE NÃO FOI COLETADO
+  if (!paperCollected) {
     ctx.fillStyle = "#fff";
     ctx.fillRect(600, 300, 50, 40);
+}
   }
 
   // vinheta (mantém clima estranho 👁️)
@@ -321,6 +437,42 @@ function drawDate() {
     console.log("Subject permanently removed././ 029 deleted...,{OPERATING NEW SUBJECT} [RISK OF LOSS OF CONTROL]!!!^!");
   }
 }
+function drawHint() {
+  if (!showHint) return;
+
+  const elapsed = Date.now() - hintStartTime;
+
+  // duração total 4s
+  if (elapsed > 4000) {
+    showHint = false;
+    return;
+  }
+
+  let alpha = 1;
+
+  // fade nos últimos 1.5s
+  if (elapsed > 2500) {
+    alpha = 1 - (elapsed - 2500) / 1500;
+  }
+
+  // glitch simples
+  const glitchX = Math.random() < 0.1 ? Math.random() * 10 - 5 : 0;
+  const glitchY = Math.random() < 0.1 ? Math.random() * 5 - 2 : 0;
+
+  ctx.save();
+  ctx.globalAlpha = alpha;
+
+  ctx.fillStyle = "white";
+  ctx.font = "16px monospace";
+
+  ctx.fillText(
+    "Pressione F para abrir o inventário",
+    450 + glitchX,
+    30 + glitchY
+  );
+
+  ctx.restore();
+}
 
       function render() {
         ctx.clearRect(0, 0, 800, 500);
@@ -332,6 +484,8 @@ function drawDate() {
         drawInteractionHint();
         drawDate();
         drawSubject();
+        inventory.draw(ctx);
+        drawHint();
       }
 
       // =========================
