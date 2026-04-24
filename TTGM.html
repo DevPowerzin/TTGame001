@@ -1,0 +1,358 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+
+<head>
+  <meta charset="UTF-8">
+  <title>TTgme</title>
+
+  <style>
+    body {
+      margin: 0;
+      background: #000;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      height: 100vh;
+    }
+
+    main {
+      border: 2px solid #222;
+    }
+
+    canvas {
+      display: block;
+      background: #000;
+    }
+  </style>
+</head>
+
+<body>
+
+  <main>
+    <canvas id="game" width="800" height="500"></canvas>
+  </main>
+
+  <script>
+    const canvas = document.getElementById("game");
+    const ctx = canvas.getContext("2d");
+
+    // =========================
+    // CARREGAMENTO DE IMAGENS
+    // =========================
+    function loadImage(src) {
+      return new Promise((resolve, reject) => {
+        const img = new Image();
+        img.src = src;
+        img.onload = () => resolve(img);
+        img.onerror = () => reject("Erro ao carregar: " + src);
+      });
+    }
+
+    async function startGame() {
+
+      const playerImg = await loadImage("pers.tt.png");
+      const paperImg = await loadImage("desenho.tt.jpeg");
+      const salaImg = await loadImage("CenarioSala.jpeg");
+      const quartoImg = await loadImage("CenarioQuarto.jpeg");
+      const jardimImg = await loadImage("CenarioJardim.jpeg");
+      const subjectImg = await loadImage("Subject029.tt.png");
+      const subjectSound = new Audio("efeitosonoroGM.m4a");
+      subjectSound.volume = 0.6; // pode ajustar (0 a 1)
+
+      // =========================
+      // ESTADO
+      // =========================
+      let scene = "quarto";
+      let showDialogue = true;
+      let dialogueIndex = 0;
+      let showPaper = false;
+      let interactHint = null; // "porta" ou "papel"
+      let subjectActive = false;
+      let subjectShown = false;
+     let subjectTimer = 0;
+
+      const dialogues = [
+        "O que eu fiz...",
+        "Por que eu fiz isso...",
+        "Saia imediatamente do quarto e vá em direção ao quintal."
+      ];
+
+      const keys = {};
+
+      const player = {
+  x: 380,
+  y: 220,
+  w: 96,
+  h: 96,
+  speed: 3
+};
+
+      // =========================
+      // INPUT
+      // =========================
+      window.addEventListener("keydown", (e) => {
+        keys[e.key.toLowerCase()] = true;
+
+        if (e.key === "Enter" && showDialogue) {
+          dialogueIndex++;
+          if (dialogueIndex >= dialogues.length) {
+            showDialogue = false;
+          }
+        }
+      });
+
+      window.addEventListener("keyup", (e) => {
+        keys[e.key.toLowerCase()] = false;
+      });
+
+      canvas.addEventListener("click", (e) => {
+
+  // avançar diálogo com clique
+  if (showDialogue) {
+    dialogueIndex++;
+    if (dialogueIndex >= dialogues.length) {
+      showDialogue = false;
+    }
+    return;
+  }
+
+  // fechar papel
+  if (showPaper) {
+    const rect = canvas.getBoundingClientRect();
+    const x = e.clientX - rect.left;
+    const y = e.clientY - rect.top;
+
+    if (x > 650 && x < 680 && y > 60 && y < 90) {
+      showPaper = false;
+    }
+  }
+});
+
+      // =========================
+      // LÓGICA
+      // =========================
+
+      function drawInteractionHint() {
+  if (!interactHint) return;
+
+  const blink = Math.floor(Date.now() / 400) % 2;
+  if (!blink) return;
+
+  ctx.fillStyle = "white";
+  ctx.font = "18px monospace";
+
+  if (interactHint === "porta") {
+    ctx.fillText("E", 730, 150);
+  }
+
+  if (interactHint === "papel") {
+    ctx.fillText("E", 610, 290);
+  }
+}
+
+      function update() {
+
+  interactHint = null;
+
+  if (!showDialogue && !showPaper) {
+
+    // movimento
+    if (keys["w"]) player.y -= player.speed;
+    if (keys["s"]) player.y += player.speed;
+    if (keys["a"]) player.x -= player.speed;
+    if (keys["d"]) player.x += player.speed;
+
+    // limites
+    player.x = Math.max(0, Math.min(752, player.x));
+    player.y = Math.max(0, Math.min(452, player.y));
+
+    // ================= PORTAS =================
+    const nearDoor =
+      player.x > 720 &&
+      player.y > 160 &&
+      player.y < 320;
+
+    if (nearDoor) {
+      interactHint = "porta";
+
+      if (keys["e"]) {
+        if (scene === "quarto") {
+          scene = "sala";
+          player.x = 20;
+        } else if (scene === "sala") {
+          scene = "quintal";
+          player.x = 20;
+        }
+      }
+    }
+
+    // ================= PAPEL =================
+    if (scene === "quintal") {
+
+      const nearPaper =
+        player.x < 650 &&
+        player.x + player.w > 600 &&
+        player.y < 340 &&
+        player.y + player.h > 300;
+
+      if (nearPaper) {
+        interactHint = "papel";
+
+        if (nearPaper && keys["e"]) {
+  showPaper = true;
+
+  // ativa o evento SOMENTE NA PRIMEIRA VEZ
+  if (!subjectShown) {
+    subjectActive = true;
+    subjectTimer = Date.now();
+    subjectShown = true;
+    // 🔊 TOCAR SOM
+    subjectSound.currentTime = 0;
+    subjectSound.play().catch(() => {});
+  }
+}
+      }
+    }
+  }
+}
+
+      // =========================
+      // RENDER
+      // =========================
+      function drawScene() {
+
+  // QUARTO
+  if (scene === "quarto") {
+    ctx.drawImage(quartoImg, 0, 0, 800, 500);
+
+    // porta (zona invisível, mas desenha leve sombra)
+    ctx.fillStyle = "rgba(0,0,0,0.3)";
+    ctx.fillRect(740, 170, 40, 140);
+  }
+
+  // SALA
+  else if (scene === "sala") {
+    ctx.drawImage(salaImg, 0, 0, 800, 500);
+
+    ctx.fillStyle = "rgba(0,0,0,0.3)";
+    ctx.fillRect(740, 170, 40, 140);
+  }
+
+  // JARDIM
+  else if (scene === "quintal") {
+    ctx.drawImage(jardimImg, 0, 0, 800, 500);
+
+    // papel ainda desenhado por cima
+    ctx.fillStyle = "#fff";
+    ctx.fillRect(600, 300, 50, 40);
+  }
+
+  // vinheta (mantém clima estranho 👁️)
+  let gradient = ctx.createRadialGradient(400, 250, 100, 400, 250, 400);
+  gradient.addColorStop(0, "rgba(0,0,0,0)");
+  gradient.addColorStop(1, "rgba(0,0,0,0.7)");
+
+  ctx.fillStyle = gradient;
+  ctx.fillRect(0, 0, 800, 500);
+}
+
+      function drawPlayer() {
+        ctx.drawImage(playerImg, player.x, player.y, player.w, player.h);
+      }
+
+      function drawDialogue() {
+  if (!showDialogue) return;
+
+  // caixa
+  ctx.fillStyle = "#000";
+  ctx.fillRect(40, 340, 720, 120);
+
+  // borda
+  ctx.strokeStyle = "#333";
+  ctx.strokeRect(40, 340, 720, 120);
+
+  // texto
+  ctx.fillStyle = "#fff";
+  ctx.font = "20px monospace";
+  ctx.fillText(dialogues[dialogueIndex], 60, 400);
+
+  // seta piscando
+  const blink = Math.floor(Date.now() / 500) % 2;
+
+  if (blink === 0) {
+    ctx.fillText("▶", 720, 430);
+  }
+}
+
+function drawDate() {
+  ctx.fillStyle = "rgba(255,255,255,0.5)";
+  ctx.font = "16px monospace";
+
+  ctx.fillText("12.01.1994", 650, 480);
+}
+
+      function drawPaper() {
+        if (!showPaper) return;
+
+        ctx.fillStyle = "#ddd";
+        ctx.fillRect(100, 50, 600, 400);
+
+        ctx.drawImage(paperImg, 150, 80, 500, 300);
+
+        ctx.fillStyle = "red";
+        ctx.fillRect(650, 60, 30, 30);
+
+        ctx.fillStyle = "white";
+        ctx.font = "20px Arial";
+        ctx.fillText("X", 658, 82);
+      }
+
+      function drawSubject() {
+  if (!subjectActive) return;
+
+  const elapsed = Date.now() - subjectTimer;
+
+  if (elapsed < 1500) {
+    // desenha no canto superior esquerdo
+    ctx.drawImage(subjectImg, 20, 20, 80, 80);
+  } else {
+    subjectActive = false;
+
+    console.log("Subject permanently removed././ 029 deleted...,{OPERATING NEW SUBJECT} [RISK OF LOSS OF CONTROL]!!!^!");
+  }
+}
+
+      function render() {
+        ctx.clearRect(0, 0, 800, 500);
+
+        drawScene();
+        drawPlayer();
+        drawDialogue();
+        drawPaper();
+        drawInteractionHint();
+        drawDate();
+        drawSubject();
+      }
+
+      // =========================
+      // LOOP
+      // =========================
+      function loop() {
+        update();
+        render();
+        requestAnimationFrame(loop);
+      }
+
+      loop();
+    }
+
+    // INICIA
+    startGame().catch(err => {
+      alert(err);
+    });
+
+  </script>
+
+</body>
+
+</html>
